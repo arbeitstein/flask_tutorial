@@ -24,12 +24,22 @@ sf_users = Base.classes.sf_user
 def base():
     return "SmartFlow WebServer"
 
+@app.route('/users', methods=['GET'])
+def user_list():
+    if request.method == 'GET':
+        all_users = session.query(sf_user).all() 
+        if all_users:
+            return jsonify({"data": all_users})
+        else:
+            abort(404)
+
 @app.route('/user/sign_in', methods=['GET'])
 def user_sign_in():
     if request.method == 'GET':
         sent_email = request.args['email']
         sent_password = request.args['password']
         res = session.query(sf_user).filter(and_(sf_users.email.like(sent_email), sf_users.password.like(sent_password))).first()
+        print(res)
         if res:
             return jsonify({"data": res})
         else:
