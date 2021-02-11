@@ -123,7 +123,8 @@ def update_shelly(shelly_id, sent_name, sent_ip):
             session.add(updating_shelly)
             session.commit()
             return "Shelly has been updated"
-
+        else:
+            abort(404)
 
 if __name__ == "__main__":
     app.run(debug = True)
