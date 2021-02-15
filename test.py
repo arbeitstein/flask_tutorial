@@ -202,4 +202,4 @@ def update_city(city_id, sent_name, sent_user_id):
 
 if __name__ == "__main__":
     app.run(debug = True)
-    # app.run(host='10.68.252.234', port=5000) 
+    # app.run(host='10.68.252.234', port=5000) # Runs the BASE URL on the Raspberry PI with the following address
