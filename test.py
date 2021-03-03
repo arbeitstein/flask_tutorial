@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session, load_only
 import json
 
 app = Flask(__name__) # Name of Flask App Running
-# engine = create_engine('postgresql://postgres:postgres@10.68.252.234:5432/Raspberry Database') # Raspberry Database
-engine = create_engine('postgresql://postgres:Xxxx44Rd@localhost:5432/postgres') # At home Database
+#engine = create_engine('postgresql://postgres:postgres@10.68.252.234:5432/Raspberry Database') # Raspberry Database
+engine = create_engine('postgresql://postgres:Xxxx44Rd@localhost:5432/sf') # At home Database
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # Disabling the Flask-SQLAlchemy Event System Tracking
 app.config['JSON_SORT_KEYS'] = False # Turning off sorting when printing out JSON to WebSite
 
@@ -16,7 +16,10 @@ session = Session(engine) # Does the conversation between app and database
 
 sf_user = Table('sf_user',metadata, Column('id', Integer, primary_key=True), autoload=True, autoload_with=engine) # Loads Database Table with all it's columns
 shelly = Table('shelly', metadata , Column('id', Integer, primary_key=True), autoload=True, autoload_with=engine)
-city = Table('city', metadata , Column('id', Integer, primary_key=True), autoload=True, autoload_with=engine)
+city = Table('city', metadata , Column('id', Integer, primary_key=True), autoload=True, autoload_with=engine, extend_existing=True)
+environment = Table('environment', metadata , Column('id', Integer, primary_key=True), autoload=True, autoload_with=engine, extend_existing=True)
+
+__table_args__ = {'extend_existing': True}
 
 
 Base = automap_base(metadata=metadata)
@@ -26,6 +29,8 @@ Base.prepare(engine, reflect=True)
 sf_users = Base.classes.sf_user # Generating Mapped Classes associated to the Tables in the Database
 shellies = Base.classes.shelly
 cities = Base.classes.city
+environments = Base.classes.environment
+
 
 @app.route('/') # Annotation to tell the Server that the Basic URL is having the following output
 def base():
@@ -49,7 +54,8 @@ def list_users():
                     "password": all_users[counter][4],
                     "area_of_solar": all_users[counter][5],
                     "light_sensor": all_users[counter][6],
-                    "raspberry_ip": all_users[counter][7]
+                    "raspberry_ip": all_users[counter][7],
+                    "city_id": all_users[counter][8]
                 })
                 counter += 1
             return jsonify({"data": users_json})
@@ -73,40 +79,72 @@ def sign_in_user(sent_email, sent_password):
                     "password": user[counter][4],
                     "area_of_solar": user[counter][5],
                     "light_sensor": user[counter][6],
-                    "raspberry_ip": all_users[counter][7]
+                    "raspberry_ip": user[counter][7],
+                    "city_id": user[counter][8]
                 })
                 counter += 1
             return jsonify({"data": signedInUser_json})
         else:
             abort(404)
 
-@app.route('/user/register/<string:sent_firstname>/<string:sent_lastname>/<string:sent_email>/<string:sent_password>/<float:sent_area>/<float:sent_light>/<string:sent_raspberry_ip>',
+@app.route('/user/register/<string:sent_city>/<string:sent_firstname>/<string:sent_lastname>/<string:sent_email>/<string:sent_password>/<float:sent_area>/<float:sent_light>/<string:sent_raspberry_ip>',
              methods=['POST'])
-def register_user(sent_firstname, sent_lastname, sent_email, sent_password, sent_area, sent_light, sent_raspberry_ip):
+def register_user(sent_city, sent_firstname, sent_lastname, sent_email, sent_password, sent_area, sent_light, sent_raspberry_ip):
     if request.method == 'POST':
-        existing_user = session.query(sf_user).filter(and_(sf_users.email.like(sent_email), sf_users.password.like(sent_password))).first()
-        if not existing_user:
-            new_user = sf_users(firstname = sent_firstname, lastname = sent_lastname, email = sent_email, password = sent_password,
-                                area_of_solar = sent_area, light_sensor = sent_light, raspberry_ip = sent_raspberry_ip) 
-            session.add(new_user)
+        existing_city = session.query(city).filter(cities.name.like(sent_city)).first()
+        if not existing_city:
+            existing_user = session.query(sf_user).filter(and_(sf_users.email.like(sent_email), sf_users.password.like(sent_password))).first()
+            if not existing_user:
+                new_city = cities(name = sent_city)
+                session.add(new_city)
+                session.commit()
+                new_city_record = session.query(city).filter(cities.name.like(sent_city)).first()
+                new_city_id = new_city_record[0]
+                new_user = sf_users(firstname = sent_firstname, lastname = sent_lastname, email = sent_email, password = sent_password,
+                                area_of_solar = sent_area, light_sensor = sent_light, raspberry_ip = sent_raspberry_ip, city_id = new_city_id) 
+                session.add(new_user)
+                session.commit()
+                return("success")
+            else:
+                return("already existing 1")
+        elif existing_city:
+            existing_city_id = existing_city[0]
+            existing_user = session.query(sf_user).filter(and_(sf_users.email.like(sent_email), sf_users.password.like(sent_password))).first()
+            if not existing_user:
+                new_user = sf_users(firstname = sent_firstname, lastname = sent_lastname, email = sent_email, password = sent_password,
+                                area_of_solar = sent_area, light_sensor = sent_light, raspberry_ip = sent_raspberry_ip, city_id = existing_city_id) 
+                session.add(new_user)
+                session.commit()
+                return("success2")
+            else:
+                return("already existing 2")
+
+
+@app.route('/user/update/<int:user_id>/<string:sent_city>/<string:sent_firstname>/<string:sent_lastname>/<string:sent_email>/<string:sent_password>/<float:sent_area>/<float:sent_light>/<string:sent_raspberry_ip>',
+             methods = ['POST'])
+def update_user(user_id, sent_city, sent_firstname, sent_lastname, sent_email, sent_password, sent_area, sent_light, sent_raspberry_ip):
+    if request.method == 'POST':
+        existing_city = session.query(city).filter(cities.name.like(sent_city)).first()
+        if not existing_city:
+            new_city = cities(name = sent_city)
+            session.add(new_city)
             session.commit()
-            return "User has been registered"
-        elif existing_user:
-            return "User with the same Email already existing"
+            new_city_record = session.query(city).filter(cities.name.like(sent_city)).first()
+            new_city_id = new_city_record[0]
+            change_user = session.query(sf_users).filter(sf_users.id == user_id).update({sf_users.firstname: sent_firstname,
+            sf_users.lastname: sent_lastname, sf_users.email: sent_email, sf_users.password: sent_password, sf_users.area_of_solar: sent_area,
+            sf_users.light_sensor: sent_light, sf_users.raspberry_ip: sent_raspberry_ip, sf_users.city_id: new_city_id})
+            session.commit()
+            return "User has been updated"
+        elif existing_city:
+            existing_city_id = existing_city[0]
+            change_user = session.query(sf_users).filter(sf_users.id == user_id).update({sf_users.firstname: sent_firstname,
+            sf_users.lastname: sent_lastname, sf_users.email: sent_email, sf_users.password: sent_password, sf_users.area_of_solar: sent_area,
+            sf_users.light_sensor: sent_light, sf_users.raspberry_ip: sent_raspberry_ip, sf_users.city_id: existing_city_id})
+            session.commit()
+            return "User has been updated2"
         else:
             abort(404)
-
-@app.route('/user/update/<int:user_id>/<string:sent_firstname>/<string:sent_lastname>/<string:sent_email>/<string:sent_password>/<float:sent_area>/<float:sent_light>/<string:sent_raspberry_ip>',
-             methods = ['POST'])
-def update_user(user_id, sent_firstname, sent_lastname, sent_email, sent_password, sent_area, sent_light, sent_raspberry_ip):
-    if request.method == 'POST':
-        change_user = session.query(sf_users).filter(sf_users.id == user_id).update({sf_users.firstname: sent_firstname,
-        sf_users.lastname: sent_lastname, sf_users.email: sent_email, sf_users.password: sent_password, sf_users.sent_area: sent_area,
-        sf_users.sent_light: sent_light, sf_users.raspberry_ip: sent_raspberry_ip})
-        session.commit()
-        return "User has been updated"
-    else:
-        abort(404)
 
 
 
@@ -123,7 +161,8 @@ def list_shellies():
                 shelly_json.append({
                     "id": shelly_list[counter][0],
                     "name": shelly_list[counter][1],
-                    "ip": shelly_list[counter][2]
+                    "ip": shelly_list[counter][2],
+                    "icon": shelly_list[counter][3]
                 })
                 counter += 1
             return jsonify({"shellies":shelly_json})
@@ -174,15 +213,14 @@ def cities_list():
                 cities_json.append({
                     "id": all_cities[counter][0],
                     "name": all_cities[counter][1],
-                    "user_id": all_cities[counter][2]
                 })
                 counter += 1
             return jsonify({"cities":cities_json})
 
-@app.route('/city/add/<string:sent_name>/<int:sent_user_id>', methods = ['POST'])
+@app.route('/city/add/<string:sent_name>', methods = ['POST'])
 def add_city(sent_name, sent_user_id):
     if request.method == 'POST':
-        adding_city = cities(name = sent_name, user_id = sent_user_id)
+        adding_city = cities(name = sent_name)
         if adding_city:
             session.add(adding_city)
             session.commit()
@@ -199,6 +237,27 @@ def update_city(city_id, sent_name, sent_user_id):
     else:
         abort(404)
 
+
+@app.route('/environment', methods=['GET'])
+def all_environments():
+    if request.method == 'GET':
+        environment_json = []
+        all_environments = session.query(environment).all()
+        if not all_environments:
+            return "No cities have been added yet"
+        if all_environments:
+            counter = 0
+            while counter < len(all_environments):
+                environment_json.append({
+                    "id": all_environments[counter][0],
+                    "temperature": all_environments[counter][1],
+                    "description": all_environments[counter][2],
+                    "city_id": all_environments[counter][3],
+                })
+                counter += 1
+            return jsonify({"environment":environment_json})
+
+    
 
 if __name__ == "__main__":
     app.run(debug = True)
